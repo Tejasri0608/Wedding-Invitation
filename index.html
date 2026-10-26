@@ -756,46 +756,71 @@ html{scroll-behavior:auto}
   var song = $('#bg-song');
   var songOn = false;
   var songFading = false;
+  var songFinished = false;
+  var fadeTimer = null;
+  var armSeek = false;
   function seekSong() {
-    try { song.currentTime = 4; } catch (err) {}
+    if (!armSeek) return;
+    try { song.currentTime = 4; armSeek = false; } catch (err) {}
   }
   function atPageEnd() {
     var el = document.documentElement;
     return window.innerHeight + window.scrollY >= el.scrollHeight - 48;
   }
+  function storyInView() {
+    var story = document.getElementById('story');
+    if (!story) return false;
+    var r = story.getBoundingClientRect();
+    return r.top < window.innerHeight * 0.65 && r.bottom > 80;
+  }
   function stopSong() {
     if (!songOn || songFading) return;
     songFading = true;
+    songFinished = true;
     var step = 0;
-    var fade = setInterval(function () {
+    fadeTimer = setInterval(function () {
       step += 1;
       song.volume = Math.max(0, 1 - step / 12);
       if (step < 12) return;
-      clearInterval(fade);
+      clearInterval(fadeTimer);
+      fadeTimer = null;
       song.pause();
       song.volume = 1;
       songOn = false;
       songFading = false;
     }, 40);
   }
-  $('.celebrate-btn').addEventListener('click', function () {
+  function startSong() {
+    if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = null; }
     songOn = true;
     songFading = false;
+    songFinished = false;
     song.volume = 1;
+    armSeek = true;
     if (song.readyState >= 1) seekSong();
     else song.addEventListener('loadedmetadata', seekSong, { once: true });
     var pending = song.play();
-    if (pending && pending.then) pending.then(seekSong).catch(function () {});
-  });
+    if (pending && pending.then) pending.then(seekSong).catch(function () { songOn = false; });
+  }
+  function maybeStartFromStory() {
+    if (songOn || songFading || songFinished) return;
+    if (storyInView()) startSong();
+  }
+  $('.celebrate-btn').addEventListener('click', startSong);
   song.addEventListener('ended', function () {
     if (!songOn) return;
+    armSeek = true;
     seekSong();
     var pending = song.play();
     if (pending && pending.catch) pending.catch(function () {});
   });
   window.addEventListener('scroll', function () {
     if (songOn && atPageEnd()) stopSong();
+    else maybeStartFromStory();
   }, { passive: true });
+  ['wheel', 'touchend', 'pointerup'].forEach(function (type) {
+    window.addEventListener(type, maybeStartFromStory, { passive: true });
+  });
 
   // countdown
   function tick() {
